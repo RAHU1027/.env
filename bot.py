@@ -3,46 +3,37 @@ import asyncio
 import httpx
 from aiohttp import web
 from telegram import BotCommand
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler
 
-# Credentials (Jo aapne diye)
+# Credentials
 TOKEN = "8744594607:AAGXRJnxQ_ylxbQO40sAQYigA5n1refYgY4"
 API_KEY = "5b108bd2fdd31c0c34bc65f24a5216a0"
 BASE_URL = "https://platfone.com/api/v1"
 EMAIL_API = "https://www.1secmail.com/api/v1/"
 
-# --- Web Server (Uptime Fix) ---
+# 1. Web Server (Render ke liye)
 async def handle(request):
-    return web.Response(text="Bot is running 24/7!")
+    return web.Response(text="Bot is running!")
 
-async def start_web_server():
+async def run_server():
     app = web.Application()
     app.router.add_get('/', handle)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', int(os.environ.get("PORT", 8080)))
+    site = web.TCPSite(runner, '0.0.0.0', int(os.environ.get("PORT", 10000)))
     await site.start()
 
-# --- Bot Commands ---
-async def setup_menu(application):
-    await application.bot.set_my_commands([
-        BotCommand("start", "Bot shuru karein"),
-        BotCommand("generate", "Naya Number lein"),
-        BotCommand("email", "Nayi Email lein")
-    ])
-
+# 2. Email aur Number Logic
 async def start(update, context):
-    user = update.effective_user
-    welcome = f"Namaste {user.first_name}! Main aapka Premium Bot hoon.\n/generate - Number ke liye\n/email - Email ke liye"
-    await update.message.reply_text(welcome)
+    await update.message.reply_text("Swagat hai! /generate (Number) aur /email (Email) use karein.")
 
-async def email(update, context):
+async def get_email(update, context):
     async with httpx.AsyncClient() as client:
         resp = await client.get(f"{EMAIL_API}?action=genRandomMailbox&count=1")
         email = resp.json()[0]
-        await update.message.reply_text(f"📧 Aapki Email: `{email}`")
+        await update.message.reply_text(f"📧 Random Email: `{email}`")
 
-async def generate(update, context):
+async def get_number(update, context):
     await update.message.reply_text("⏳ Number generate ho raha hai...")
     headers = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
     payload = {"country_id": "us", "service_id": "ig"}
@@ -52,11 +43,11 @@ async def generate(update, context):
         data = response.json()
         
         if "activation_id" not in data:
-            await update.message.reply_text("❌ Error: Number nahi mila. Platfone balance check karein.")
+            await update.message.reply_text("❌ Error: Number nahi mila. Balance check karo.")
             return
 
         act_id, phone = data.get("activation_id"), data.get("phone")
-        await update.message.reply_text(f"✅ Number: `{phone}`\nID: `{act_id}`\nSMS ka wait...")
+        await update.message.reply_text(f"✅ Number: `{phone}`\nID: `{act_id}`\nWait for OTP...")
         
         for i in range(60): 
             await asyncio.sleep(2)
@@ -66,16 +57,16 @@ async def generate(update, context):
                 return
         await update.message.reply_text("❌ Timeout: SMS nahi aaya.")
 
-async def main():
-    # 1. Web Server start karo (Render ke liye)
-    await start_web_server()
-    
-    # 2. Bot start karo
-    app = ApplicationBuilder().token(TOKEN).post_init(setup_menu).build()
+# 3. Main Running
+async def run_bot():
+    app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("generate", generate))
-    app.add_handler(CommandHandler("email", email))
+    app.add_handler(CommandHandler("generate", get_number))
+    app.add_handler(CommandHandler("email", get_email))
     await app.run_polling()
+
+async def main():
+    await asyncio.gather(run_server(), run_bot())
 
 if __name__ == '__main__':
     asyncio.run(main())
